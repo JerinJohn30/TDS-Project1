@@ -9,6 +9,7 @@ from fastapi import HTTPException
 import requests
 from scipy.spatial.distance import cosine
 from dotenv import load_dotenv
+import time
 
 load_dotenv()
 
@@ -27,7 +28,7 @@ def A1(email="22f1001826@ds.study.iitm.ac.in"):
         return stdout
     except subprocess.CalledProcessError as e:
         raise HTTPException(status_code=500, detail=f"Error: {e.stderr}")
-# A1()
+
 def A2(prettier_version="prettier@3.4.2", filename="/data/format.md"):
     command = [r"C:\Program Files\nodejs\npx.cmd", prettier_version, "--write", filename]
     try:
@@ -106,7 +107,7 @@ def A7(filename='/data/email.txt', output_file='/data/email-sender.txt'):
     with open(filename, 'r') as file:
         email_content = file.readlines()
 
-    sender_email = "ajay@gmail.com"
+    sender_email = "jerin@gmail.com"
     for line in email_content:
         if "From" == line[:4]:
             sender_email = (line.strip().split(" ")[-1]).replace("<", "").replace(">", "")
@@ -123,41 +124,8 @@ def png_to_base64(image_path):
     with open(image_path, "rb") as image_file:
         base64_string = base64.b64encode(image_file.read()).decode('utf-8')
     return base64_string
-# def A8():
-#     input_image = "data/credit_card.png"
-#     output_file = "data/credit-card.txt"
-
-#     # Step 1: Extract text using OCR
-#     try:
-#         image = Image.open(input_image)
-#         extracted_text = pytesseract.image_to_string(image)
-#         print(f"Extracted text:\n{extracted_text}")
-#     except Exception as e:
-#         print(f"❌ Error reading or processing {input_image}: {e}")
-#         return
-
-#     # Step 2: Pass the extracted text to the LLM to validate and extract card number
-#     prompt = f"""Extract the credit card number from the following text. Respond with only the card number, without spaces:
-
-#     {extracted_text}
-#     """
-#     try:
-#         card_number = ask_llm(prompt).strip()
-#         print(f"Card number extracted by LLM: {card_number}")
-#     except Exception as e:
-#         print(f"❌ Error processing with LLM: {e}")
-#         return
-
-#     # Step 3: Save the extracted card number to a text file
-#     try:
-#         with open(output_file, "w", encoding="utf-8") as file:
-#             file.write(card_number + "\n")
-#         print(f"✅ Credit card number saved to: {output_file}")
-#     except Exception as e:
-#         print(f"❌ Error writing {output_file}: {e}")
 
 def A8(filename='/data/credit_card.txt', image_path='/data/credit_card.png'):
-    # Construct the request body for the AIProxy call
     body = {
         "model": "gpt-4o-mini",
         "messages": [
@@ -197,30 +165,35 @@ def A8(filename='/data/credit_card.txt', image_path='/data/credit_card.png'):
     # Write the extracted card number to the output file
     with open(filename, 'w') as file:
         file.write(card_number)
-# A8()
 
-
-
-def get_embedding(text):
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {AIPROXY_TOKEN}"
-    }
-    data = {
-        "model": "text-embedding-3-small",
-        "input": [text]
-    }
-    response = requests.post("http://aiproxy.sanand.workers.dev/openai/v1/embeddings", headers=headers, data=json.dumps(data))
-    response.raise_for_status()
-    return response.json()["data"][0]["embedding"]
+def batch_get_embeddings(comments, batch_size=10):
+    embeddings = []
+    for i in range(0, len(comments), batch_size):
+        batch = comments[i:i+batch_size]
+        data = {
+            "model": "text-embedding-3-small",
+            "input": batch
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {AIPROXY_TOKEN}"
+        }
+        try:
+            response = requests.post("http://aiproxy.sanand.workers.dev/openai/v1/embeddings", headers=headers, data=json.dumps(data))
+            response.raise_for_status()  # Raise error for bad status codes
+            embeddings += [item["embedding"] for item in response.json()["data"]]
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching embeddings for batch {i}-{i+batch_size}: {e}")
+            time.sleep(2)  # Sleep to avoid spamming requests
+    return embeddings
 
 def A9(filename='/data/comments.txt', output_filename='/data/comments-similar.txt'):
     # Read comments
     with open(filename, 'r') as f:
         comments = [line.strip() for line in f.readlines()]
 
-    # Get embeddings for all comments
-    embeddings = [get_embedding(comment) for comment in comments]
+    # Get embeddings for all comments (using batch processing)
+    embeddings = batch_get_embeddings(comments)
 
     # Find the most similar pair
     min_distance = float('inf')
